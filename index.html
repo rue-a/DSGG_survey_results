@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Sheets Data Fetch</title>
+
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+
+</head>
+
+<body>
+    <div>
+        <svg id="assessment" width="800" height="400"></svg>
+    </div>
+    <div>
+        <svg id="assessment-revision" width="800" height="400"></svg>
+    </div>
+
+
+
+    <script>
+        // Replace with your Google Sheets API key or OAuth credentials
+        const spreadsheetId = '11H78kEuBYcA3pOr113WWXjHzGEWMYKBsKSyZ6WcZpDg';
+        const base = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv`
+        const sheetName = encodeURIComponent('Self-assessment DSS (Results-Table)');
+        const url = `${base}&sheet=${sheetName}`
+
+
+
+        // Fetch data from Google Sheets
+        fetch(url)
+            .then(response => response.text())
+            .then(data => {
+                data = d3.csvParse(data);
+                console.log(data)
+                // Define chart dimensions
+                const width = 800;
+                const height = 400;
+                const margin = { top: 30, right: 100, bottom: 30, left: 100 };
+                const innerWidth = width - margin.left - margin.right;
+                const innerHeight = height - margin.top - margin.bottom;
+
+                // Create an SVG container for the chart
+                const svg = d3.select("#assessment")
+                    .attr("width", width)
+                    .attr("height", height);
+
+                // Extract column names (excluding "Zeitstempel")
+                const columns = Object.keys(data[0]).filter(column => column !== "Zeitstempel");
+
+                // Set up scales (switched x and y scales)
+                const yScale = d3.scalePoint()
+                    .domain(columns)
+                    .range([margin.top, height - margin.bottom]);
+
+                const xScale = d3.scaleLinear()
+                    .domain([1, 5]) // Adjust the domain according to your data
+                    .range([margin.left, width - margin.right]);
+
+                // Function to calculate the mean of an array
+                function calculateMean(arr) {
+                    return arr.reduce((sum, val) => sum + Number(val), 0) / arr.length;
+                }
+
+                // Function to calculate the standard deviation of an array
+                function calculateStandardDeviation(arr) {
+                    const mean = calculateMean(arr);
+                    const squaredDifferences = arr.map((val) => Math.pow(Number(val) - mean, 2));
+                    const variance = calculateMean(squaredDifferences);
+                    return Math.sqrt(variance);
+                }
+
+                const numericData = {}
+                for (const column of columns) {
+                    numericData[column] = []
+                }
+
+                data.forEach((row) => {
+                    for (const column of columns) {
+                        numericData[column].push(Number(row[column]))
+                    }
+                });
+
+                // Calculate mean and standard deviation for each column
+                const meanValues = {};
+                const stdDeviationValues = {};
+
+                for (const column in numericData) {
+                    if (numericData.hasOwnProperty(column)) {
+                        meanValues[column] = calculateMean(numericData[column]).toFixed(2);
+                        stdDeviationValues[column] = calculateStandardDeviation(numericData[column]).toFixed(2);
+                    }
+                }
+
+                // Print the results
+                console.log(meanValues)
+                console.log(stdDeviationValues)
+
+                line_coords = []
+                std_coords = []
+                for (const column in meanValues) {
+                    line_coords.push({ "x": xScale(meanValues[column]), "y": yScale(column) })
+                    // console.log(meanValues[column] - stdDeviationValues[column])
+                    std_coords.push({ "x": xScale(meanValues[column] - stdDeviationValues[column]), "y": yScale(column) })
+                }
+                for (const column of Object.keys(stdDeviationValues).slice().reverse()) {
+                    console.log(column)
+                    console.log()
+                    std_coords.push({ "x": xScale(Number(meanValues[column]) + Number(stdDeviationValues[column])), "y": yScale(column) })
+                }
+                console.log(std_coords)
+
+
+
+
+                // Define a line generator
+                const lineGenerator = d3.line()
+                    .x(d => d.x)
+                    .y(d => d.y);
+
+                const polygonGenerator = d3.line()
+                    .x(d => d.x)
+                    .y(d => d.y)
+                    .curve(d3.curveLinearClosed);
+
+                svg.append("path")
+                    .datum(std_coords)
+                    .attr("d", polygonGenerator)
+                    .attr("fill", "#cc0000")
+                    .attr("stroke", "#cc0000") // Line color
+                    .attr("opacity", 0.3)
+                    .attr("stroke-width", 1); // Line width
+
+                // Iterate through point sets and draw lines
+                svg.append("path")
+                    .datum(line_coords)
+                    .attr("d", lineGenerator)
+                    .attr("fill", "none")
+                    .attr("stroke", "#cc0000") // Line color
+                    .attr("stroke-width", 4); // Line width
+
+                // }
+                // Create an array to hold all data points
+                const allDataPoints = [];
+
+                // Generate data points for each line
+                for (let subset of data) {
+                    const screen_coords = [];
+                    for (const column of columns) {
+                        screen_coords.push({ "x": xScale(parseInt(subset[column])), "y": yScale(column) });
+                    }
+                    allDataPoints.push(screen_coords);
+                }
+                console.log(allDataPoints)
+
+
+                // Iterate through point sets and draw lines
+                allDataPoints.forEach(points => {
+                    svg.append("path")
+                        .datum(points)
+                        .attr("fill", "none")
+                        .attr("stroke", "#cc0000") // Line color
+                        .attr('opacity', 0.1)
+                        .attr("stroke-width", 1) // Line width
+                        .attr("d", lineGenerator);
+                });
+
+                const categoryLabels = ["Range of Tasks", "Institutional Placement", "Science or Service", "RDM Knowledge", "Domain Knowledge", "IT Proficiency"];
+
+                // Create a group for custom labels above the y-axis
+                const customLabelGroup = svg.append("g")
+                    .attr("class", "custom-labels")
+                    // .style("text-anchor", "middle")
+                    .style("font-family", "Arial, sans-serif") // Change the font typeface
+                    .style("font-size", "12px")
+                    // .attr('font-weight', 'bold')
+                    // .attr("dominant-baseline", "hanging")
+                    .attr("transform", `translate(${margin.left + 10},-2)`); // Adjust the position as needed
+
+                // Append custom labels to the group
+                const categoryLabelScale = d3.scalePoint()
+                    .domain(categoryLabels)
+                    .range([margin.top, height - margin.bottom]);
+                customLabelGroup.selectAll(".custom-label")
+                    .data(categoryLabels)
+                    .enter().append("text")
+                    .attr("class", "custom-label")
+                    .attr("x", 0)
+                    .attr("y", d => categoryLabelScale(d))
+                    .attr("dy", 0) // Adjust the vertical position as needed
+                    .text(d => d);
+
+
+                // Create y-axis left
+                // Define the custom tick values and labels
+                const leftLabels = ["narrow", "centralized", "scientific", "generic", "not required", "detailed"];
+                svg.append("g")
+                    .attr("class", "y-axis")
+                    .attr("transform", `translate(${margin.left},0)`)
+                    .call(d3.axisLeft(yScale).tickFormat((d, i) => leftLabels[i]));
+
+                // Create y-axis right
+                const rightLabels = ["wide", "decentralized", "service-oriented", "domain-specific", "required", "basic"]
+                svg.append("g")
+                    .attr("class", "y-axis")
+                    .attr("transform", `translate(${width - margin.right},0)`)
+                    .call(d3.axisRight(yScale).tickFormat((d, i) => rightLabels[i]));
+
+
+
+                // Create x-axis 
+                svg.append("g")
+                    .attr("class", "x-axis")
+                    .attr("transform", `translate(0,${height - margin.bottom})`)
+                    .call(d3.axisBottom(xScale).tickValues([1, 2, 3, 4, 5]).tickFormat(""));
+
+                svg.append("text")
+                    .attr("x", width / 2) // Adjust the x-coordinate for centering
+                    .attr("y", 15) // Adjust the y-coordinate for vertical positioning
+                    .style("font-family", "Arial, sans-serif") // Change the font typeface
+                    .style("font-size", "16px")
+                    .attr('font-weight', 'bold')
+                    .attr("text-anchor", "middle") // Center the text horizontally
+                    .text("Self-assessment DSS");
+            })
+            .catch(error => {
+                console.error('Error fetching data:', error);
+            });
+    </script>
+    <script>
+        // Replace with your Google Sheets API key or OAuth credentials
+        const spreadsheetId2 = '1MpDjNMBKdPVz0J3rYbw4nJnsaZPlINGZ34Kgb_ZrVlg';
+        const base2 = `https://docs.google.com/spreadsheets/d/${spreadsheetId2}/export?format=csv`
+        const sheetName2 = encodeURIComponent('Self-assessment DSS - Revision (Results-Table)');
+        const url2 = `${base2}&sheet=${sheetName2}`
+
+
+
+        // Fetch data from Google Sheets
+        fetch(url2)
+            .then(response => response.text())
+            .then(data => {
+                data = d3.csvParse(data);
+                console.log(data)
+                // Define chart dimensions
+                const width = 800;
+                const height = 400;
+                const margin = { top: 30, right: 100, bottom: 30, left: 100 };
+                const innerWidth = width - margin.left - margin.right;
+                const innerHeight = height - margin.top - margin.bottom;
+
+                // Create an SVG container for the chart
+                const svg = d3.select("#assessment-revision")
+                    .attr("width", width)
+                    .attr("height", height);
+
+                // Extract column names (excluding "Zeitstempel")
+                const columns = Object.keys(data[0]).filter(column => column !== "Zeitstempel");
+
+                // Set up scales (switched x and y scales)
+                const yScale = d3.scalePoint()
+                    .domain(columns)
+                    .range([margin.top, height - margin.bottom]);
+
+                const xScale = d3.scaleLinear()
+                    .domain([1, 5]) // Adjust the domain according to your data
+                    .range([margin.left, width - margin.right]);
+
+                // Function to calculate the mean of an array
+                function calculateMean(arr) {
+                    return arr.reduce((sum, val) => sum + Number(val), 0) / arr.length;
+                }
+
+                // Function to calculate the standard deviation of an array
+                function calculateStandardDeviation(arr) {
+                    const mean = calculateMean(arr);
+                    const squaredDifferences = arr.map((val) => Math.pow(Number(val) - mean, 2));
+                    const variance = calculateMean(squaredDifferences);
+                    return Math.sqrt(variance);
+                }
+
+                const numericData = {}
+                for (const column of columns) {
+                    numericData[column] = []
+                }
+
+                data.forEach((row) => {
+                    for (const column of columns) {
+                        numericData[column].push(Number(row[column]))
+                    }
+                });
+
+                // Calculate mean and standard deviation for each column
+                const meanValues = {};
+                const stdDeviationValues = {};
+
+                for (const column in numericData) {
+                    if (numericData.hasOwnProperty(column)) {
+                        meanValues[column] = calculateMean(numericData[column]).toFixed(2);
+                        stdDeviationValues[column] = calculateStandardDeviation(numericData[column]).toFixed(2);
+                    }
+                }
+
+                // Print the results
+                console.log(meanValues)
+                console.log(stdDeviationValues)
+
+                line_coords = []
+                std_coords = []
+                for (const column in meanValues) {
+                    line_coords.push({ "x": xScale(meanValues[column]), "y": yScale(column) })
+                    // console.log(meanValues[column] - stdDeviationValues[column])
+                    std_coords.push({ "x": xScale(meanValues[column] - stdDeviationValues[column]), "y": yScale(column) })
+                }
+                for (const column of Object.keys(stdDeviationValues).slice().reverse()) {
+                    console.log(column)
+                    console.log()
+                    std_coords.push({ "x": xScale(Number(meanValues[column]) + Number(stdDeviationValues[column])), "y": yScale(column) })
+                }
+                console.log(std_coords)
+
+
+
+
+                // Define a line generator
+                const lineGenerator = d3.line()
+                    .x(d => d.x)
+                    .y(d => d.y);
+
+                const polygonGenerator = d3.line()
+                    .x(d => d.x)
+                    .y(d => d.y)
+                    .curve(d3.curveLinearClosed);
+
+                svg.append("path")
+                    .datum(std_coords)
+                    .attr("d", polygonGenerator)
+                    .attr("fill", "#00afc8")
+                    .attr("stroke", "#00afc8") // Line color
+                    .attr("opacity", 0.3)
+                    .attr("stroke-width", 1); // Line width
+
+                // Iterate through point sets and draw lines
+                svg.append("path")
+                    .datum(line_coords)
+                    .attr("d", lineGenerator)
+                    .attr("fill", "none")
+                    .attr("stroke", "#00afc8") // Line color
+                    .attr("stroke-width", 4); // Line width
+
+                // }
+                // Create an array to hold all data points
+                const allDataPoints = [];
+
+                // Generate data points for each line
+                for (let subset of data) {
+                    const screen_coords = [];
+                    for (const column of columns) {
+                        screen_coords.push({ "x": xScale(parseInt(subset[column])), "y": yScale(column) });
+                    }
+                    allDataPoints.push(screen_coords);
+                }
+                console.log(allDataPoints)
+
+
+                // Iterate through point sets and draw lines
+                allDataPoints.forEach(points => {
+                    svg.append("path")
+                        .datum(points)
+                        .attr("fill", "none")
+                        .attr("stroke", "#00afc8") // Line color
+                        .attr('opacity', 0.1)
+                        .attr("stroke-width", 1) // Line width
+                        .attr("d", lineGenerator);
+                });
+
+                const categoryLabels = ["Range of Tasks", "Institutional Placement", "Science or Service", "RDM Knowledge", "Domain Knowledge", "IT Proficiency"];
+
+                // Create a group for custom labels above the y-axis
+                const customLabelGroup = svg.append("g")
+                    .attr("class", "custom-labels")
+                    // .style("text-anchor", "middle")
+                    .style("font-family", "Arial, sans-serif") // Change the font typeface
+                    .style("font-size", "12px")
+                    // .attr('font-weight', 'bold')
+                    // .attr("dominant-baseline", "hanging")
+                    .attr("transform", `translate(${margin.left + 10},-2)`); // Adjust the position as needed
+
+                // Append custom labels to the group
+                const categoryLabelScale = d3.scalePoint()
+                    .domain(categoryLabels)
+                    .range([margin.top, height - margin.bottom]);
+                customLabelGroup.selectAll(".custom-label")
+                    .data(categoryLabels)
+                    .enter().append("text")
+                    .attr("class", "custom-label")
+                    .attr("x", 0)
+                    .attr("y", d => categoryLabelScale(d))
+                    .attr("dy", 0) // Adjust the vertical position as needed
+                    .text(d => d);
+
+
+                // Create y-axis left
+                // Define the custom tick values and labels
+                const leftLabels = ["narrow", "centralized", "scientific", "generic", "not required", "detailed"];
+                svg.append("g")
+                    .attr("class", "y-axis")
+                    .attr("transform", `translate(${margin.left},0)`)
+                    .call(d3.axisLeft(yScale).tickFormat((d, i) => leftLabels[i]));
+
+                // Create y-axis right
+                const rightLabels = ["wide", "decentralized", "service-oriented", "domain-specific", "required", "basic"]
+                svg.append("g")
+                    .attr("class", "y-axis")
+                    .attr("transform", `translate(${width - margin.right},0)`)
+                    .call(d3.axisRight(yScale).tickFormat((d, i) => rightLabels[i]));
+
+
+
+                // Create x-axis 
+                svg.append("g")
+                    .attr("class", "x-axis")
+                    .attr("transform", `translate(0,${height - margin.bottom})`)
+                    .call(d3.axisBottom(xScale).tickValues([1, 2, 3, 4, 5]).tickFormat(""));
+
+                svg.append("text")
+                    .attr("x", width / 2) // Adjust the x-coordinate for centering
+                    .attr("y", 15) // Adjust the y-coordinate for vertical positioning
+                    .style("font-family", "Arial, sans-serif") // Change the font typeface
+                    .style("font-size", "16px")
+                    .attr('font-weight', 'bold')
+                    .attr("text-anchor", "middle") // Center the text horizontally
+                    .text("Self-assessment DSS - Revision");
+            })
+            .catch(error => {
+                console.error('Error fetching data:', error);
+            });
+    </script>
+</body>
+
+</html>
