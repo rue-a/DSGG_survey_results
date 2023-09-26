@@ -14,7 +14,7 @@
     <script>
         function plot_data(data, svg_id, graph_color, graphic_title) {
             data = d3.csvParse(data);
-            console.log(data)
+            // console.log(data)
 
             // filp values for 6)
             const s = '6) IT Proficiency Is it required of you to have a detailed understanding of IT (programming, databases, interfaces, etc.), or is basic knowledge sufficient? '
@@ -144,7 +144,7 @@
                 }
                 allDataPoints.push(screen_coords);
             }
-            console.log(allDataPoints)
+            // console.log(allDataPoints)
 
 
             // Iterate through point sets and draw lines
@@ -154,7 +154,7 @@
                     .attr("fill", "none")
                     .attr("stroke", graph_color) // Line color
                     .attr('opacity', 0.1)
-                    .attr("stroke-width", 1.5) // Line width
+                    .attr("stroke-width", 1) // Line width
                     .attr("d", lineGenerator);
             });
 
